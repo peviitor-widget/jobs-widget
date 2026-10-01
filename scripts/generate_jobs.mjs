@@ -22,6 +22,10 @@ const OUTPUT_PATH = 'jobs.json';
 const SEARCH_API = 'https://api.peviitor.ro/v1/search/';
 const TARGET_MATCHED = 30;
 const BATCH = 25;
+const MAX_EVALUATED = 250;
+const MIN_MATCH_PERCENTAGE = 60;
+const MIN_DESC_CHARS = 80;
+const MAX_DESC_CHARS = 1500;
 const MAX_PDFS = 12;
 const MAX_CURRICULUM_CHARS = 40000;
 const UA = 'Mozilla/5.0 Chrome/120';
@@ -261,6 +265,41 @@ async function searchJobs(keywords) {
   return jobs;
 }
 
+function htmlToText(html) {
+  return String(html)
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<(?:br|\/p|\/li|\/h\d)\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;|&#39;|&apos;/gi, "'")
+    .replace(/&[a-z0-9#]+;/gi, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\s*\n\s*/g, '\n')
+    .trim();
+}
+
+// ld+json poate fi obiect, array sau {"@graph": [...]}; cautam JobPosting-ul
+function findJobPosting(node) {
+  if (!node || typeof node !== 'object') return null;
+  if (Array.isArray(node)) {
+    for (const n of node) {
+      const found = findJobPosting(n);
+      if (found) return found;
+    }
+    return null;
+  }
+  const type = node['@type'];
+  if ((Array.isArray(type) ? type : [type]).includes('JobPosting')) return node;
+  return findJobPosting(node['@graph']);
+}
+
+// Pagini de tip cookie-banner / meniu / "enable JavaScript" nu descriu jobul
+const JUNK_DESC = /enable javascript|cookie|accept all|sign in|log in|autentific|toate drepturile/i;
+
 async function getDesc(job) {
   try {
     const url = job.job_link || job.url;
@@ -270,49 +309,72 @@ async function getDesc(job) {
     });
     const html = await r.text();
 
-    const ldMatch = html.match(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i);
-    if (ldMatch) {
+    const candidates = [];
+
+    for (const m of html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi)) {
       try {
-        const ld = JSON.parse(ldMatch[1]);
-        if (ld.description) return ld.description;
+        const posting = findJobPosting(JSON.parse(m[1]));
+        if (posting?.description) candidates.push(htmlToText(posting.description));
       } catch {
         // ld+json invalid, mergem mai departe
       }
     }
 
     const metaMatch = html.match(/<meta[^>]*name="description"[^>]*content="([^"]+)"/i);
-    if (metaMatch) return metaMatch[1];
+    if (metaMatch) candidates.push(htmlToText(metaMatch[1]));
 
-    const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    const idx = text.search(/about.?the.?job|descrierea.?postului|descriere/i);
-    return idx > 0 ? text.slice(idx, idx + 2000) : text.slice(0, 1500);
+    const text = htmlToText(html);
+    const idx = text.search(/about.?the.?job|descrierea.?postului|descriere|responsabilit|cerinte|cerințe/i);
+    if (idx >= 0) candidates.push(text.slice(idx, idx + MAX_DESC_CHARS));
+
+    const good = candidates.find((c) => c.length >= MIN_DESC_CHARS && !JUNK_DESC.test(c.slice(0, 300)));
+    return good ? good.slice(0, MAX_DESC_CHARS) : '';
   } catch (e) {
     log(`    Nu am putut citi descrierea pentru "${job.title}": ${e.message}`);
     return '';
   }
 }
 
-function evaluateBatch(profileText, batch, descs) {
+// Rezultatele se asociaza joburilor prin "id", nu prin pozitie: daca modelul
+// sare sau reordoneaza un job, restul nu se muta pe joburi gresite.
+function evaluateBatch(profileText, batch) {
   const jobList = batch
     .map(
-      (j, i) => `${i + 1}. ${j.title} @ ${j.company}
+      (j) => `[id=${j.id}] ${j.title} @ ${j.company}
    Loc: ${JSON.stringify(j.location)} | Salariu: ${JSON.stringify(j.salary)}
-   ${(descs[i] || '(fara descriere)').slice(0, 1200)}`
+   ${j.desc}`
     )
-    .join('\n');
+    .join('\n\n');
 
   const prompt = `${profileText}
 
-Pentru fiecare job de mai jos, decide daca e potrivit pentru tine.
-Raspunde DOAR cu un JSON array, cate un obiect per job, in aceeasi ordine:
-[{"title":"...","match":true,"matchPercentage":0,"reason":"...","tags":["competenta","competenta"]}]
+Evalueaza fiecare job de mai jos pentru un absolvent sau student la anii mari din domeniul tau. Fii strict: e mai bine sa respingi un job discutabil decat sa il propui.
 
-Unde "tags" sunt maximum 2 competente scurte (1-2 cuvinte) din lista ta care au dus la potrivire.
+Criterii, in ordinea importantei:
+1. Domeniu: sarcinile principale ale jobului trebuie sa foloseasca direct competentele tale tehnice/de specialitate. Competentele generale (comunicare, lucru in echipa, negociere, Office) NU sunt suficiente pentru o potrivire.
+2. Nivel: accepta doar internship, stagiu, trainee, entry-level, junior sau mid cu pana la ~3 ani experienta. Respinge pozitiile senior, lead, manager, director sau care cer experienta indelungata.
+3. Relevanta: respinge joburile din alt domeniu (vanzari, call center, curatenie, productie, transport etc.) chiar daca titlul contine "junior" sau "internship".
+
+Scor "matchPercentage" (0-100):
+- 80-100: domeniul se potriveste direct si nivelul e potrivit
+- 60-79: domeniul se potriveste partial, nivelul e potrivit
+- sub 60: domeniu diferit sau nivel nepotrivit => "match": false
+
+Raspunde DOAR cu un JSON array, cate un obiect per job, folosind exact "id"-ul din fata jobului:
+[{"id":0,"match":true,"matchPercentage":0,"reason":"o propozitie","tags":["competenta","competenta"]}]
+
+"tags" sunt maximum 2 competente scurte (1-2 cuvinte) din lista ta, care au dus la potrivire.
 
 ---
 ${jobList}`;
 
-  return extractJson(runOpencode(prompt), 'array') || [];
+  const results = extractJson(runOpencode(prompt), 'array') || [];
+  const validIds = new Set(batch.map((j) => j.id));
+  const byId = new Map();
+  for (const r of results) {
+    if (r && validIds.has(r.id) && !byId.has(r.id)) byId.set(r.id, r);
+  }
+  return byId;
 }
 
 // ── main ────────────────────────────────────────────────────────────────────
@@ -366,34 +428,61 @@ async function main() {
   const allJobs = await searchJobs(profile.keywords);
   log(`${allJobs.length} joburi unice gasite`);
 
+  // Evaluam toate joburile (nu ne oprim la primele potriviri), apoi le ordonam dupa scor
+  const candidates = allJobs.slice(0, MAX_EVALUATED);
+  if (allJobs.length > MAX_EVALUATED) {
+    log(`Evaluez doar primele ${MAX_EVALUATED} din ${allJobs.length} joburi`);
+  }
+
   const matched = [];
-  for (let start = 0; start < allJobs.length && matched.length < TARGET_MATCHED; start += BATCH) {
-    const batch = allJobs.slice(start, start + BATCH);
-    log(`\nBatch ${start / BATCH + 1}: citesc ${batch.length} descrieri...`);
-    const descs = await Promise.all(batch.map((j) => getDesc(j)));
+  let skippedNoDesc = 0;
+  for (let start = 0; start < candidates.length; start += BATCH) {
+    const chunk = candidates.slice(start, start + BATCH);
+    log(`\nBatch ${start / BATCH + 1}: citesc ${chunk.length} descrieri...`);
+    const descs = await Promise.all(chunk.map((j) => getDesc(j)));
+
+    // Fara descriere nu putem judeca potrivirea, deci jobul se sare
+    const batch = [];
+    chunk.forEach((job, i) => {
+      if (!descs[i]) {
+        skippedNoDesc++;
+        return;
+      }
+      batch.push({ ...job, id: start + i, desc: descs[i] });
+    });
+    if (batch.length === 0) continue;
 
     log(`  Evaluez ${batch.length} joburi...`);
-    const results = evaluateBatch(profileText, batch, descs);
+    const results = evaluateBatch(profileText, batch);
+    if (results.size < batch.length) {
+      log(`  Atentie: ${batch.length - results.size} joburi fara raspuns valid de la model`);
+    }
 
-    for (let i = 0; i < Math.min(results.length, batch.length); i++) {
-      if (!results[i]?.match || matched.length >= TARGET_MATCHED) continue;
+    for (const job of batch) {
+      const res = results.get(job.id);
+      const score = Number(res?.matchPercentage);
+      if (!res?.match || !Number.isFinite(score) || score < MIN_MATCH_PERCENTAGE) continue;
       matched.push({
-        url: batch[i].url,
-        title: batch[i].title,
-        company: batch[i].company,
-        location: batch[i].location,
-        salary: batch[i].salary,
-        date: batch[i].date,
-        status: batch[i].status,
-        _version_: batch[i]._version_,
-        _root_: batch[i]._root_,
-        tags: (results[i].tags || []).slice(0, 2),
-        matchPercentage: results[i].matchPercentage,
-        reason: results[i].reason,
+        url: job.url,
+        title: job.title,
+        company: job.company,
+        location: job.location,
+        salary: job.salary,
+        date: job.date,
+        status: job.status,
+        _version_: job._version_,
+        _root_: job._root_,
+        tags: (Array.isArray(res.tags) ? res.tags : []).slice(0, 2),
+        matchPercentage: Math.min(100, Math.round(score)),
+        reason: res.reason,
       });
     }
-    log(`  Potrivite pana acum: ${matched.length}/${TARGET_MATCHED}`);
+    log(`  Potrivite pana acum: ${matched.length}`);
   }
+
+  matched.sort((a, b) => b.matchPercentage - a.matchPercentage);
+  matched.length = Math.min(matched.length, TARGET_MATCHED);
+  if (skippedNoDesc > 0) log(`${skippedNoDesc} joburi sarite (fara descriere)`);
 
   config.updatedAt = new Date().toISOString();
 
