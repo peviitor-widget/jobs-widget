@@ -39,7 +39,7 @@ Acțiunea de creare are nevoie de un secret de organizație numit `WIDGET_TOKEN`
 
 Acțiunea creează singură repository-ul facultății în organizație, activează GitHub Pages, publică widgetul și adaugă facultatea în registrul organizației. Nu trebuie să creezi repository-ul manual.
 
-Toate facultățile cu widget activ sunt listate în [`facultati-jobs-widget`](https://github.com/peviitor-widget/facultati-jobs-widget), grupate pe universități.
+Toate facultățile cu widget activ sunt listate în [`facultati-jobs-widget`](https://github.com/peviitor-widget/facultati-jobs-widget), grupate pe universități. Dacă ștergi repository-ul unei facultăți, rulează manual acțiunea **3. Curata registrul de repository-uri sterse** (cu opțiunea *dry run* poți vedea întâi ce se elimină).
 
 Ghidul complet e în [wiki](https://github.com/peviitor-widget/jobs-widget/wiki).
 
@@ -75,6 +75,8 @@ Fără parametri, widgetul folosește titlul și culoarea din `conf/widget.json`
 | `scripts/generate_jobs.mjs` | Curriculă → profil de competențe → căutare → matching → `jobs.json` |
 | `scripts/set_pages_url.mjs` | Salvează URL-ul de Pages și generează `EMBED.md` |
 | `scripts/register_faculty.mjs` | Adaugă facultatea în registrul organizației |
+| `scripts/prune_registry.mjs` | Scoate din registru facultățile al căror repository a fost șters |
+| `.github/workflows/prune-registry.yml` | Rulat manual în template: curăță registrul de repository-uri șterse |
 | `conf/widget.json` | Configurarea widgetului (link curriculă, titlu, culoare, URL Pages, profil cache-uit) |
 | `jobs.json` | Joburile potrivite — apare după prima configurare, vezi [STRUCTURE.md](STRUCTURE.md) |
 | `EMBED.md` | Codul de integrare — apare după prima configurare |

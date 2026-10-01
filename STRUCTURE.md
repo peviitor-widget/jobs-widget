@@ -125,3 +125,7 @@ Fiecare facultate e scrisă de două ori de [`scripts/register_faculty.mjs`](scr
 2. la finalul configurării, cu linkul live al widgetului și status `activ`
 
 Identitatea unei intrări e `repo`, nu numele — redenumirea facultății actualizează rândul existent în loc să adauge unul nou. Scrierile concurente sunt rezolvate prin reîncercare: dacă push-ul e respins, se reia clonarea și upsert-ul peste versiunea proaspătă.
+
+### Curățarea registrului
+
+GitHub nu are un trigger pentru ștergerea unui repository, deci intrările rămase fără repository se scot la cerere, rulând manual workflow-ul `3. Curata registrul de repository-uri sterse` din template. [`scripts/prune_registry.mjs`](scripts/prune_registry.mjs) verifică fiecare `repo` din `registry.json` și elimină doar intrările la care API-ul răspunde 404; o universitate rămasă fără facultăți dispare și ea. Orice altă eroare (token, rate limit, rețea) oprește scriptul fără să modifice registrul, la fel ca situația în care *toate* intrările ar părea șterse. Cu opțiunea `dry_run` se afișează doar ce ar fi eliminat.
