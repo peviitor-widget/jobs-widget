@@ -11,23 +11,36 @@ function Widget() {
 
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const params = getWidgetParams();
   const title = params.get("title") || config.title;
   const color = params.get("color") || config.color;
 
+  const [attempt, setAttempt] = useState(0);
+
   useEffect(() => {
     let active = true;
-    getJobs().then((data) => {
-      if (active) {
-        setJobs(data);
-        setLoading(false);
-      }
-    });
+    getJobs()
+      .then((data) => {
+        if (active) setJobs(data);
+      })
+      .catch((err) => {
+        if (active) setError(err.kind || "network");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
     return () => {
       active = false;
     };
-  }, []);
+  }, [attempt]);
+
+  const retry = () => {
+    setError(null);
+    setLoading(true);
+    setAttempt((n) => n + 1);
+  };
 
   useEffect(() => {
     localStorage.setItem("peviitor-widget-theme", theme);
@@ -86,9 +99,9 @@ function Widget() {
           </div>
         ) : (
           <JobsWrapper
-            filteredJobs={jobs}
-            totalJobsCount={jobs.length}
-            onResetFilter={() => {}}
+            jobs={jobs}
+            error={error}
+            onRetry={retry}
             onApply={handleApply}
           />
         )}

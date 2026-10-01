@@ -4,7 +4,34 @@ const jobsModules = import.meta.glob("../../../jobs.json", {
   eager: true,
   import: "default",
 });
-let localJobs = Object.values(jobsModules)[0] ?? [];
+const bundled = Object.values(jobsModules);
+// undefined = jobs.json nu exista la build; [] = exista, dar fara potriviri
+const localJobs = bundled.length > 0 ? bundled[0] : undefined;
+
+// kind: "missing" | "network" | "invalid"
+export class JobsError extends Error {
+  constructor(kind, message) {
+    super(message);
+    this.kind = kind;
+  }
+}
+
+async function fetchJobsFile() {
+  let res;
+  try {
+    res = await fetch("./jobs.json", { cache: "no-cache" });
+  } catch {
+    throw new JobsError("network", "Request failed");
+  }
+  if (res.status === 404) throw new JobsError("missing", "jobs.json not found");
+  if (!res.ok) throw new JobsError("network", `HTTP ${res.status}`);
+  try {
+    return await res.json();
+  } catch {
+    // Pages poate raspunde cu HTML in loc de 404 pentru un fisier lipsa
+    throw new JobsError("missing", "jobs.json is not JSON");
+  }
+}
 
 const solidColors = [
   "bg-blue-600 text-white",
@@ -35,19 +62,15 @@ function getLogoBg(companyName) {
 }
 
 export async function getJobs() {
-  let jobsList = localJobs;
-  if (!jobsList || jobsList.length === 0) {
-    try {
-      const res = await fetch("./jobs.json");
-      if (res.ok) {
-        jobsList = await res.json();
-      }
-    } catch {
-      // fallback silent
-    }
+  const jobsList = localJobs !== undefined ? localJobs : await fetchJobsFile();
+
+  if (!Array.isArray(jobsList)) {
+    throw new JobsError("invalid", "jobs.json is not an array");
   }
 
-  return (jobsList || []).map((job, index) => {
+  return jobsList
+    .filter((job) => job && typeof job === "object" && !Array.isArray(job))
+    .map((job, index) => {
     const company = job.company || "Companie Necunoscută";
     return {
       id: job._version_ ? `${job._version_}-${index}` : `job-${index}`,

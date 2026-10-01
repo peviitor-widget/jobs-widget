@@ -1,11 +1,44 @@
 import { useRef, useEffect, useCallback } from "react";
 import { JobCard } from "../components/ui/JobCard";
-import { Search, RefreshCw } from "lucide-react";
+import { Search, RefreshCw, Inbox, AlertTriangle } from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Card, CardHeader, CardFooter } from "../components/ui/card";
 
-function EmptyJobCard({ totalJobsCount, onResetFilter }) {
-  const isNoDataAtAll = totalJobsCount === 0;
+const MESSAGES = {
+  empty: {
+    title: "Fără joburi momentan",
+    subtitle: "Revino curând",
+    body: "Nu am găsit nicio ofertă potrivită pentru această facultate. Lista se actualizează periodic.",
+    icon: Search,
+    tone: "from-slate-500 to-slate-700",
+  },
+  missing: {
+    title: "Widget neconfigurat",
+    subtitle: "Joburile nu au fost generate",
+    body: "Fișierul cu joburi nu există încă. Rulează acțiunea de configurare a widgetului și așteaptă finalizarea ei.",
+    icon: Inbox,
+    tone: "from-amber-500 to-orange-600",
+  },
+  network: {
+    title: "Joburile nu s-au încărcat",
+    subtitle: "Problemă de conexiune",
+    body: "Nu am putut descărca ofertele de muncă. Verifică conexiunea și încearcă din nou.",
+    icon: RefreshCw,
+    tone: "from-red-500 to-rose-600",
+    retry: true,
+  },
+  invalid: {
+    title: "Date invalide",
+    subtitle: "Fișierul de joburi e corupt",
+    body: "Fișierul cu joburi nu are formatul așteptat. Rulează din nou acțiunea de reîmprospătare a joburilor.",
+    icon: AlertTriangle,
+    tone: "from-red-500 to-rose-600",
+  },
+};
+
+function EmptyJobCard({ kind, onRetry }) {
+  const { title, subtitle, body, icon: Icon, tone, retry } =
+    MESSAGES[kind] || MESSAGES.network;
 
   return (
     <Card
@@ -15,58 +48,42 @@ function EmptyJobCard({ totalJobsCount, onResetFilter }) {
       <CardHeader className="p-4 pb-3 flex flex-col space-y-3">
         <div className="flex gap-3 items-center w-full">
           <div
-            className={`h-10 w-10 rounded-xl bg-linear-to-br ${
-              isNoDataAtAll
-                ? "from-red-500 to-rose-600"
-                : "from-slate-500 to-slate-700"
-            } flex items-center justify-center text-white shrink-0 shadow-sm`}
+            className={`h-10 w-10 rounded-xl bg-linear-to-br ${tone} flex items-center justify-center text-white shrink-0 shadow-sm`}
             aria-hidden="true"
           >
-            {isNoDataAtAll ? (
-              <RefreshCw className="w-5 h-5" />
-            ) : (
-              <Search className="w-5 h-5" />
-            )}
+            <Icon className="w-5 h-5" />
           </div>
           <div className="min-w-0 flex-1 overflow-hidden">
             <h3 className="text-xs font-bold text-text-h m-0 text-left leading-snug">
-              {isNoDataAtAll ? "Locuri de muncă indisponibile momentan" : "Fără joburi"}
+              {title}
             </h3>
             <p className="text-[11px] font-semibold text-text text-left mt-0.5">
-              {isNoDataAtAll
-                ? "Încearcă mai târziu"
-                : "Selectează alt filtru"}
+              {subtitle}
             </p>
           </div>
         </div>
         <p className="text-[11px] text-text text-left m-0 leading-relaxed font-normal">
-          {isNoDataAtAll
-            ? "Nu am putut descărca ofertele de muncă. Te rugăm să reîncarci pagina sau să încerci mai târziu."
-            : "Nu am găsit nicio ofertă disponibilă pentru facultatea selectată. Modifică filtrul pentru a vedea joburi."}
+          {body}
         </p>
       </CardHeader>
-      <CardFooter className="pb-0 px-0 pt-0 flex items-center">
-        <Button
-          onClick={() => {
-            if (isNoDataAtAll) {
-              window.location.reload();
-            } else {
-              onResetFilter();
-            }
-          }}
-          className="w-full text-xs rounded-none py-0 h-8"
-        >
-          {isNoDataAtAll ? "Reîncarcă pagina" : "Toate joburile"}
-        </Button>
-      </CardFooter>
+      {retry && (
+        <CardFooter className="pb-0 px-0 pt-0 flex items-center">
+          <Button
+            onClick={onRetry}
+            className="w-full text-xs rounded-none py-0 h-8"
+          >
+            Încearcă din nou
+          </Button>
+        </CardFooter>
+      )}
     </Card>
   );
 }
 
 export function JobsWrapper({
-  filteredJobs,
-  totalJobsCount,
-  onResetFilter,
+  jobs,
+  error,
+  onRetry,
   onApply,
 }) {
   const cardRefs = useRef([]);
@@ -86,20 +103,17 @@ export function JobsWrapper({
   }, []);
 
   useEffect(() => {
-    cardRefs.current = cardRefs.current.slice(0, filteredJobs.length);
+    cardRefs.current = cardRefs.current.slice(0, jobs.length);
     const observer = new ResizeObserver(updateHeight);
     cardRefs.current.filter(Boolean).forEach((el) => observer.observe(el));
     updateHeight();
     return () => observer.disconnect();
-  }, [filteredJobs, updateHeight]);
+  }, [jobs, updateHeight]);
 
   return (
     <div className="flex flex-col gap-3">
-      {filteredJobs.length === 0 ? (
-        <EmptyJobCard
-          totalJobsCount={totalJobsCount}
-          onResetFilter={onResetFilter}
-        />
+      {error || jobs.length === 0 ? (
+        <EmptyJobCard kind={error || "empty"} onRetry={onRetry} />
       ) : (
         <div
           ref={listRef}
@@ -107,7 +121,7 @@ export function JobsWrapper({
           aria-label="Listă locuri de muncă"
           className="flex flex-col gap-3 overflow-y-auto overflow-x-hidden p-1 snap-y snap-mandatory"
         >
-          {filteredJobs.map((job, idx) => (
+          {jobs.map((job, idx) => (
             <div
               key={job.id}
               ref={(el) => {

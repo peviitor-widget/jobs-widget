@@ -197,7 +197,7 @@ function HomePage() {
             Actualizarea joburilor
           </h3>
           <p className="text-sm leading-relaxed">
-            Joburile se reîmprospătează automat săptămânal. Le poți actualiza și
+            Joburile se reîmprospătează automat zilnic. Le poți actualiza și
             manual rulând acțiunea{" "}
             <strong>2. Reimprospateaza joburile</strong> din tab-ul Actions al
             repository-ului.
