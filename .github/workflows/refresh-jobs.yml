@@ -11,8 +11,8 @@ on:
         default: false
         type: boolean
   schedule:
-    # in fiecare luni la 04:00 UTC
-    - cron: '0 4 * * 1'
+    # in fiecare zi la 04:00 UTC
+    - cron: '0 4 * * *'
 
 permissions:
   contents: write

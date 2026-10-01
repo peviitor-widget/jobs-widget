@@ -69,7 +69,7 @@ Fără parametri, widgetul folosește titlul și culoarea din `conf/widget.json`
 |------|-----|
 | `.github/workflows/create-widget.yml` | Rulat în template: creează repository-ul facultății și pornește configurarea în el |
 | `.github/workflows/setup.yml` | Configurarea propriu-zisă, rulată în repository-ul facultății |
-| `.github/workflows/refresh-jobs.yml` | Reîmprospătarea săptămânală a joburilor |
+| `.github/workflows/refresh-jobs.yml` | Reîmprospătarea zilnică a joburilor |
 | `.github/workflows/deploy.yml` | Build & deploy pe GitHub Pages (reutilizabil) |
 | `scripts/faculty_slug.mjs` | Numele facultății → numele repository-ului |
 | `scripts/generate_jobs.mjs` | Curriculă → profil de competențe → căutare → matching → `jobs.json` |
@@ -82,7 +82,7 @@ Fără parametri, widgetul folosește titlul și culoarea din `conf/widget.json`
 
 ## Actualizarea joburilor
 
-Joburile se reîmprospătează automat în fiecare luni. Poți rula manual oricând acțiunea **2. Reimprospateaza joburile**, cu opțiunea de a reciti curricula dacă planul de învățământ s-a schimbat.
+Joburile se reîmprospătează automat în fiecare zi. Poți rula manual oricând acțiunea **2. Reimprospateaza joburile**, cu opțiunea de a reciti curricula dacă planul de învățământ s-a schimbat.
 
 `jobs.json` e importat la build time, așa că fiecare actualizare declanșează și un redeploy.
 
