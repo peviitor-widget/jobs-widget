@@ -28,6 +28,8 @@ permissions:
 
 jobs:
   refresh:
+    # Template-ul nu are curricula, deci nu are ce reimprospata
+    if: github.repository != 'peviitor-widget/jobs-widget'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
